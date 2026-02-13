@@ -105,7 +105,7 @@ int connectRemoteServer(char* host_addr, int port_num)
     struct hostent *host = gethostbyname(host_addr);
     if(host == NULL){
         fprintf(stderr, "No such host exists\n");
-        close(remoteSocket);   // 🔥 FIX
+        close(remoteSocket);  
         return -1;
     }
 
@@ -369,7 +369,7 @@ int main(int argc, char * argv[])
         printf("Client connected: %s:%d\n",
                 ip, ntohs(client_addr.sin_port));
 
-        // ⭐⭐ IMPORTANT FIX — allocate memory for thread argument
+        //  allocate memory for thread argument
         int *pclient = malloc(sizeof(int));
         *pclient = client_socketId;
 
