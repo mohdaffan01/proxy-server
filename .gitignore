@@ -1,0 +1,13 @@
+# Compiled files
+*.o
+*.out
+*.exe
+
+# Binary files
+proxy
+
+# VS Code folder
+.vscode/
+
+# Mac system files
+.DS_Store
