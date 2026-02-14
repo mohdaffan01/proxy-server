@@ -47,14 +47,13 @@ pthread_mutex_t lock;               //lock is used for locking the cache
 cache_element* head;                //pointer to the cache
 int cache_size;             //cache_size denotes the current size of the cache
 
-int sendErrorMessage(int socket, int status_code)
-{
-	char str[1024];
-	char currentTime[50];
+int sendErrorMessage(int socket, int status_code){
+	char str[1024];//store whole http respone
+	char currentTime[50];//current data time
 	time_t now = time(0);
 
 	struct tm data = *gmtime(&now);
-	strftime(currentTime,sizeof(currentTime),"%a, %d %b %Y %H:%M:%S %Z", &data);
+	strftime(currentTime,sizeof(currentTime),"%a, %d %b %Y %H:%M:%S %Z", &data);//time in readable form
 
 	switch(status_code)
 	{
@@ -102,7 +101,7 @@ int connectRemoteServer(char* host_addr, int port_num)
         return -1;
     }
 
-    struct hostent *host = gethostbyname(host_addr);
+    struct hostent *host = gethostbyname(host_addr);//convert hostname into ip address 
     if(host == NULL){
         fprintf(stderr, "No such host exists\n");
         close(remoteSocket);  
@@ -114,14 +113,9 @@ int connectRemoteServer(char* host_addr, int port_num)
     server_addr.sin_family = AF_INET;
     server_addr.sin_port = htons(port_num);
 
-    memcpy(&server_addr.sin_addr,
-           host->h_addr_list[0],
-           host->h_length);
+    memcpy(&server_addr.sin_addr,host->h_addr_list[0],host->h_length);//copying the ip address in server_addr structure
 
-    if(connect(remoteSocket,
-               (struct sockaddr*)&server_addr,
-               sizeof(server_addr)) < 0)
-    {
+    if(connect(remoteSocket, (struct sockaddr*)&server_addr,sizeof(server_addr)) < 0) {
         perror("Connect failed");
         close(remoteSocket);   
         return -1;
@@ -130,17 +124,13 @@ int connectRemoteServer(char* host_addr, int port_num)
     return remoteSocket;
 }
 
-
-int handle_request(int clientSocket,ParsedRequest *request,char *tempReq)
-{
-    char *buf = malloc(MAX_BYTES);
+//Browser → Proxy → Google → Proxy → Browser (+ Cache save) // it is the main function of proxy server
+int handle_request(int clientSocket,ParsedRequest *request,char *tempReq){
+    char *buf = malloc(MAX_BYTES);//make a buffer with max bytes
     if(!buf) return -1;
 
     // Safe request line creation
-    int written = snprintf(buf, MAX_BYTES,
-                           "GET %s %s\r\n",
-                           request->path,
-                           request->version);
+    int written = snprintf(buf, MAX_BYTES,"GET %s %s\r\n",request->path, request->version);
 
     if(written <= 0){
         free(buf);
@@ -158,7 +148,7 @@ int handle_request(int clientSocket,ParsedRequest *request,char *tempReq)
     int server_port = request->port ? atoi(request->port) : 80;
 
     int remoteSocketID =
-        connectRemoteServer(request->host, server_port);
+        connectRemoteServer(request->host, server_port);//make connection with actual server
 
     if(remoteSocketID < 0){
         free(buf);
@@ -175,19 +165,19 @@ int handle_request(int clientSocket,ParsedRequest *request,char *tempReq)
     char *cache_buffer = NULL;
     int total_size = 0;
 
-    while(1)
+    while(1)//recieve the response from the server - infinite loop
     {
-        int bytes = recv(remoteSocketID, buf,MAX_BYTES, 0);
+        int bytes = recv(remoteSocketID, buf,MAX_BYTES, 0);//recv -> its read the data 
 
-        if(bytes <= 0)
+        if(bytes <= 0)//if no data comes 
             break;
 
         // Send to client
-        send(clientSocket, buf, bytes, 0);
+        send(clientSocket, buf, bytes, 0);//send to the client recive data from server
 
         // Expand cache buffer safely
         char *new_buffer =
-            realloc(cache_buffer, total_size + bytes);
+            realloc(cache_buffer, total_size + bytes);//increase the size of cache buffer
 
         if(!new_buffer){
             free(cache_buffer);
@@ -198,9 +188,7 @@ int handle_request(int clientSocket,ParsedRequest *request,char *tempReq)
 
         cache_buffer = new_buffer;
 
-        memcpy(cache_buffer + total_size,
-               buf,
-               bytes);
+        memcpy(cache_buffer + total_size,buf,bytes);//add the new data in the buffer in the end
 
         total_size += bytes;
     }
@@ -217,7 +205,7 @@ int handle_request(int clientSocket,ParsedRequest *request,char *tempReq)
 
 
 int checkHTTPversion(char *msg)
-{
+{//support only http version 1
 	int version = -1;
 
 	if(strncmp(msg, "HTTP/1.1", 8) == 0)
@@ -226,7 +214,7 @@ int checkHTTPversion(char *msg)
 	}
 	else if(strncmp(msg, "HTTP/1.0", 8) == 0)			
 	{
-		version = 1;										// Handling this similar to version 1.1
+		version = 1;										
 	}
 	else
 		version = -1;
@@ -235,7 +223,7 @@ int checkHTTPversion(char *msg)
 }
 
 //handle the socket connection of client
- //handles client HTTP requests by checking cache first, if not found fetches from remote server, then cleans up and exits.
+//handles client HTTP requests by checking cache first, if not found fetches from remote server, then cleans up and exits.
 void* thread_fn(void* socketNew){
     sem_wait(&semaphore);//if limit is full then stop here
 
@@ -407,8 +395,8 @@ cache_element* find(char* url){
     return site;
 }
 
-void remove_cache_element()
-{
+//this function remove the least recently used element from the cache
+void remove_cache_element(){
     if(head == NULL)
         return;
 
@@ -417,7 +405,7 @@ void remove_cache_element()
     cache_element *lru = head;
     cache_element *lru_prev = NULL;
 
-    // Find LRU node
+    // Find LRU node / traverse the linkedlist
     while(curr != NULL)
     {
         if(curr->lru_time_track < lru->lru_time_track){
@@ -442,13 +430,11 @@ void remove_cache_element()
     free(lru);
 }
 
-
-int add_cache_element(char* data, int size, char* url)
-{
+//add element in the caching system
+int add_cache_element(char* data, int size, char* url){
     pthread_mutex_lock(&lock);
 
-    int element_size = size + strlen(url)
-                      + sizeof(cache_element) + 1;
+    int element_size = size + strlen(url)+ sizeof(cache_element) + 1;
 
     if(element_size > MAX_ELEMENT_SIZE){
         pthread_mutex_unlock(&lock);
@@ -459,8 +445,7 @@ int add_cache_element(char* data, int size, char* url)
         remove_cache_element();   // SAFE now
     }
 
-    cache_element* element =
-        malloc(sizeof(cache_element));
+    cache_element* element = malloc(sizeof(cache_element));//Allocate the memory for new cache element
 
     element->data = malloc(size);
     memcpy(element->data, data, size);
