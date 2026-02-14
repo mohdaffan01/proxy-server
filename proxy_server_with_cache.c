@@ -38,7 +38,7 @@ void remove_cache_element();
 int port_number = 8080;				// Default Port
 int proxy_socketId;					// socket descriptor of proxy server
 pthread_t tid[MAX_CLIENTS];         //array to store the thread ids of clients
-sem_t seamaphore;	                //if client requests exceeds the max_clients this seamaphore puts the
+sem_t semaphore;	                //if client requests exceeds the max_clients this semaphore puts the
                                     //waiting threads to sleep and wakes them when traffic on queue decreases
 //sem_t cache_lock;			       
 pthread_mutex_t lock;               //lock is used for locking the cache
@@ -234,90 +234,83 @@ int checkHTTPversion(char *msg)
 	return version;
 }
 
-
-void* thread_fn(void* socketNew)
-{
-    sem_wait(&seamaphore);
+//handle the socket connection of client
+ //handles client HTTP requests by checking cache first, if not found fetches from remote server, then cleans up and exits.
+void* thread_fn(void* socketNew){
+    sem_wait(&semaphore);//if limit is full then stop here
 
     int socket = *((int*)socketNew);
     free(socketNew);
 
-    char *buffer = calloc(MAX_BYTES, sizeof(char));
+    char *buffer = calloc(MAX_BYTES, sizeof(char));//allocate buffer to store the request
     int bytes_recv = recv(socket, buffer, MAX_BYTES, 0);
 
-    while(bytes_recv > 0)
-    {
+    while(bytes_recv > 0){//http request not comes complete in one time it comes in the form of chunks then it check that complete request comes or not
         int len = strlen(buffer);
-        if(strstr(buffer, "\r\n\r\n") == NULL)
-        {
-            bytes_recv = recv(socket, buffer + len, MAX_BYTES - len, 0);
+        if(strstr(buffer, "\r\n\r\n") == NULL){
+            bytes_recv = recv(socket, buffer + len, MAX_BYTES - len, 0);//recieve more data because request is incomplete 
         }
         else break;
     }
 
-    if(bytes_recv <= 0){
+    if(bytes_recv <= 0){//client gone or error
         close(socket);
         free(buffer);
-        sem_post(&seamaphore);
+        sem_post(&semaphore);
         return NULL;
     }
 
     char *tempReq = malloc(strlen(buffer) + 1);
     strcpy(tempReq, buffer);   // safe copy with null terminator
 
-    cache_element* temp = find(tempReq);
+    cache_element* temp = find(tempReq);//search in cache
 
-    if(temp != NULL){
-        send(socket, temp->data, temp->len, 0);
+    //check the request present in cache 
+    if(temp != NULL){ //temp = not null -> cache hit 
+        send(socket, temp->data, temp->len, 0);//cache data send to the client socket
         printf("Data retrieved from cache\n");
-    }
-    else
-    {
-        ParsedRequest* request = ParsedRequest_create();
+    }else{//cache miss
+        ParsedRequest* request = ParsedRequest_create();//store the http parts
         if(request == NULL){
             close(socket);
             free(buffer);
             free(tempReq);
-            sem_post(&seamaphore);
+            sem_post(&semaphore);//release the semaphore
             return NULL;
         }
 
-        if (ParsedRequest_parse(request, buffer, strlen(buffer)) == 0)
-        {
-            if(!strcmp(request->method,"GET"))
-            {
-                if(request->host && request->path && request->version)
-                {
+        if (ParsedRequest_parse(request, buffer, strlen(buffer)) == 0){
+            if(!strcmp(request->method,"GET")){//check is it get method 
+                if(request->host && request->path && request->version){// check is it correct url and http version
                     if(handle_request(socket, request, tempReq) < 0)
                         sendErrorMessage(socket, 500);
                 }
             }
         }
 
-        ParsedRequest_destroy(request);
+        ParsedRequest_destroy(request);//free parsing structure
     }
 
-    shutdown(socket, SHUT_RDWR);
+    shutdown(socket, SHUT_RDWR);//close connection both read and write
     close(socket);
     free(buffer);
     free(tempReq);
 
-    sem_post(&seamaphore);
+    sem_post(&semaphore);//release semaphore
     return NULL;
 }
 
 
 
-int main(int argc, char * argv[])
-{
+int main(int argc, char * argv[]){//./proxy_server 8080 (./proxy_server - argv[0] , 8080 - argv[1] )
     int client_socketId, client_len;
     struct sockaddr_in server_addr, client_addr;
 
-    sem_init(&seamaphore, 0, MAX_CLIENTS);
+    sem_init(&semaphore, 0, MAX_CLIENTS);//initialize the semaphore
     pthread_mutex_init(&lock, NULL);
 
     if(argc == 2)
-        port_number = atoi(argv[1]);
+        port_number = atoi(argv[1]);//atoi ->convert string into integer
     else{
         printf("Usage: %s <port>\n", argv[0]);
         exit(1);
@@ -325,7 +318,7 @@ int main(int argc, char * argv[])
 
     printf("Starting Proxy Server on Port : %d\n", port_number);
 
-    proxy_socketId = socket(AF_INET, SOCK_STREAM, 0);
+    proxy_socketId = socket(AF_INET, SOCK_STREAM, 0);//create new socket
     if(proxy_socketId < 0){
         perror("socket failed");
         exit(1);
@@ -351,13 +344,11 @@ int main(int argc, char * argv[])
 
     printf("Proxy running...\n");
 
-    while(1)
+    while(1)//server always run and accept the connection
     {
         client_len = sizeof(client_addr);
 
-        client_socketId = accept(proxy_socketId,
-                                (struct sockaddr*)&client_addr,
-                                (socklen_t*)&client_len);
+        client_socketId = accept(proxy_socketId,(struct sockaddr*)&client_addr,(socklen_t*)&client_len);
 
         if(client_socketId < 0){
             perror("accept failed");
@@ -367,30 +358,30 @@ int main(int argc, char * argv[])
         char ip[INET_ADDRSTRLEN];
         inet_ntop(AF_INET, &client_addr.sin_addr, ip, sizeof(ip));
         printf("Client connected: %s:%d\n",
-                ip, ntohs(client_addr.sin_port));
+                ip, ntohs(client_addr.sin_port));//ntos - convert network byte order to host byte order of port
 
         //  allocate memory for thread argument
         int *pclient = malloc(sizeof(int));
         *pclient = client_socketId;
 
         pthread_t thread_id;
-        pthread_create(&thread_id, NULL, thread_fn, pclient);
+        pthread_create(&thread_id, NULL, thread_fn, pclient);//create new thread
 
         // detach so no zombie threads
         pthread_detach(thread_id);
     }
 
-    close(proxy_socketId);
+    close(proxy_socketId);//close the linsening socket
     return 0;
 }
 
-
+//it takes the url string and compare the url and cache url
 cache_element* find(char* url){
 
 // Checks for url in the cache if found returns pointer to the respective cache element or else returns NULL
     cache_element* site=NULL;
 	//sem_wait(&cache_lock);
-    int temp_lock_val = pthread_mutex_lock(&lock);
+    int temp_lock_val = pthread_mutex_lock(&lock);//set lock because many threads or request not access 
 	printf("Remove Cache Lock Acquired %d\n",temp_lock_val); 
     if(head!=NULL){
         site = head;
@@ -411,7 +402,7 @@ cache_element* find(char* url){
     printf("\nurl not found\n");
 	}
 	//sem_post(&cache_lock);
-    temp_lock_val = pthread_mutex_unlock(&lock);
+    temp_lock_val = pthread_mutex_unlock(&lock);//release the lock because other threads enter
 	printf("Remove Cache Lock Unlocked %d\n",temp_lock_val); 
     return site;
 }
